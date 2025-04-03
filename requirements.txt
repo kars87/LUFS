@@ -1,0 +1,9 @@
+flask
+pydub
+matplotlib
+numpy
+soundfile
+librosa
+pyloudnorm
+pedalboard
+pysndfx
