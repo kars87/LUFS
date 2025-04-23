@@ -1,7 +1,7 @@
 import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
+from flask_cloudflared import run_with_cloudflared
 from flask import Flask, request, jsonify, render_template, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import os
@@ -16,15 +16,16 @@ from pysndfx import AudioEffectsChain
 from pydub import AudioSegment  # Add this import for AudioSegment
 
 app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
+run_with_cloudflared(app)  
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-ALLOWED_EXTENSIONS = {'wav'}
-TEMP_DIR = 'temp'
-os.makedirs(TEMP_DIR, exist_ok=True)
+logger.info(f"Using absolute upload folder path: {UPLOAD_FOLDER}")
 
-# Make sure upload directory exists
+# Make sure directories exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
+os.makedirs(TEMP_DIR, exist_ok=True)
+ALLOWED_EXTENSIONS = {'wav'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -555,28 +556,30 @@ def process_audio():
                     # Copy to final destination
                     processed_filename = "processed_" + secure_filename(filename)
                     processed_filepath = os.path.join(app.config['UPLOAD_FOLDER'], processed_filename)
-                    
+
                     # Convert to AudioSegment and export
                     try:
                         data, rate = sf.read(normalized_path)
+                        logger.info(f"Writing processed file to: {processed_filepath}")
                         sf.write(processed_filepath, data, rate)
                         logger.info(f"Processed file exported to: {processed_filepath}")
+                        logger.info(f"File exists after write: {os.path.exists(processed_filepath)}")
                     except Exception as e:
                         logger.error(f"Error exporting processed file: {e}")
                         return jsonify({'error': f'Error exporting processed file: {str(e)}'})
-                    
+
                     # Clean up temp file
                     try:
                         os.remove(normalized_path)
                         logger.info(f"Removed temp file: {normalized_path}")
                     except Exception as e:
                         logger.error(f"Failed to remove temp file: {e}")
-                    
+
                     # Verify the processed file exists
                     if not os.path.exists(processed_filepath):
                         logger.error(f"Processed file not found at {processed_filepath}")
                         return jsonify({'error': 'Processed file not found'})
-                    
+
                     logger.info(f"Returning response with processed file: {processed_filename}")
                     return jsonify({
                         'lufs': original_lufs,
@@ -606,7 +609,28 @@ def process_audio():
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
+    full_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    logger.info(f"Request for file: {filename}, full path: {full_path}")
+    logger.info(f"File exists: {os.path.exists(full_path)}")
+    logger.info(f"Directory contents: {os.listdir(app.config['UPLOAD_FOLDER'])}")
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    """Dedicated endpoint for file downloads"""
+    logger.info(f"Download request for: {filename}")
+    # Ensure the file exists
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(filepath):
+        logger.error(f"File not found: {filepath}")
+        return "File not found", 404
+    
+    logger.info(f"Serving file from: {filepath}")
+    return send_from_directory(
+        directory=UPLOAD_FOLDER,
+        path=filename,
+        as_attachment=True
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)

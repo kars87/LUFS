@@ -211,12 +211,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     const downloadLink = document.getElementById('download-link');
                     if (downloadLink) {
                         if (data.processed_file) {
-                            downloadLink.href = '/uploads/' + data.processed_file;
+                            // Use the new download endpoint
+                            downloadLink.href = '/download/' + data.processed_file;
                             downloadLink.style.display = 'inline-block';
                             console.log("Download link set to:", downloadLink.href);
                         } else {
                             downloadLink.style.display = 'none';
-                            console.log("No processed file available, hiding download link");
                         }
                     }
                     
